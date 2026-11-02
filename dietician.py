@@ -194,6 +194,9 @@ def before_rabbithole_stores_documents(docs: List[Document], cat) -> List[Docume
                     # `hash` is UNIQUE: if another document already owns the new hash we cannot store it,
                     # so we keep the old one instead of failing the commit (which would leave the vector memory
                     # without the deleted chunks and without the new ones).
+                    # Known trade-off: while the conflict lasts the stored hash never matches, so at every run
+                    # check_should_update() returns True and this branch scrolls the whole source again.
+                    # Thanks to the dedup below nothing is re-embedded or duplicated, it's only repeated work.
                     old_hash = doc_by_name.hash
                     hash_owner = session.query(DietDocument).filter(
                         DietDocument.hash == dietician_data['hash'],

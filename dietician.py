@@ -194,6 +194,7 @@ def before_rabbithole_stores_documents(docs: List[Document], cat) -> List[Docume
                     # `hash` is UNIQUE: if another document already owns the new hash we cannot store it,
                     # so we keep the old one instead of failing the commit (which would leave the vector memory
                     # without the deleted chunks and without the new ones).
+                    old_hash = doc_by_name.hash
                     hash_owner = session.query(DietDocument).filter(
                         DietDocument.hash == dietician_data['hash'],
                         DietDocument.id != doc_by_name.id
@@ -215,7 +216,15 @@ def before_rabbithole_stores_documents(docs: List[Document], cat) -> List[Docume
                     session.commit()
 
                     if len(old_chunks_to_delete_ids) > 0:
-                        cat.memory.vectors.declarative.delete_points(old_chunks_to_delete_ids)
+                        try:
+                            cat.memory.vectors.declarative.delete_points(old_chunks_to_delete_ids)
+                        except Exception:
+                            # The new hash is already committed: if the vector memory was not updated,
+                            # restore the old hash so the document is reprocessed at the next run
+                            # instead of being seen as "unchanged" with stale chunks forever.
+                            doc_by_name.hash = old_hash
+                            session.commit()
+                            raise
 
                     # docs contain only chunks never inserted in declarative memory, we keep into the vectordb any chunk previously inserted (to avoid unnecessary calls to the embedding model).
                     # Chunks repeated inside the new document are ingested only once.
